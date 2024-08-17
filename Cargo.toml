@@ -1,0 +1,7 @@
+[package]
+name = "olc_codejam_2024"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.14"
