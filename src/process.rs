@@ -3,28 +3,55 @@ use bevy_prototype_lyon::{
     prelude::*,
     shapes::{RegularPolygon, RegularPolygonFeature},
 };
+use rand::prelude::*;
+
+const PROCESS_SHAPE: RegularPolygon = RegularPolygon {
+    sides: 6,
+    feature: RegularPolygonFeature::Apothem(16.0),
+    center: Vec2::ZERO,
+};
 
 pub struct ProcessPlugin;
 impl Plugin for ProcessPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_process);
+        app.insert_resource(ProcessSpawnConfig {
+            timer: Timer::from_seconds(30.0, TimerMode::Repeating),
+        })
+        .add_systems(FixedUpdate, spawn_process);
     }
+}
+
+#[derive(Resource)]
+struct ProcessSpawnConfig {
+    timer: Timer,
 }
 
 #[derive(Component)]
 struct Process;
 
-fn spawn_process(mut commands: Commands) {
-    let shape = RegularPolygon {
-        sides: 6,
-        feature: RegularPolygonFeature::Apothem(32.0),
-        ..Default::default()
-    };
+fn spawn_process(
+    time: Res<Time>,
+    mut spawn_config: ResMut<ProcessSpawnConfig>,
+    mut commands: Commands,
+) {
+    // Process spawn timer
+    spawn_config.timer.tick(time.delta());
+    if !spawn_config.timer.just_finished() {
+        return;
+    }
+
+    // Generate random position
+    let mut rng = rand::thread_rng();
+    let random_pos = Vec2::new(rng.gen_range(-512.0..=512.0), rng.gen_range(-384.0..=384.0));
 
     commands.spawn((
         Process,
         ShapeBundle {
-            path: GeometryBuilder::build_as(&shape),
+            path: GeometryBuilder::build_as(&PROCESS_SHAPE),
+            spatial: SpatialBundle::from_transform(Transform {
+                translation: random_pos.extend(0.0),
+                ..Default::default()
+            }),
             ..Default::default()
         },
         Fill::color(DARK_GREEN.with_alpha(0.3)),
