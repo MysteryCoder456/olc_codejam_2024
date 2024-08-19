@@ -17,7 +17,8 @@ impl Plugin for ProcessPlugin {
         app.insert_resource(ProcessSpawnConfig {
             timer: Timer::from_seconds(30.0, TimerMode::Repeating),
         })
-        .add_systems(FixedUpdate, spawn_process);
+        .add_systems(Startup, spawn_initial_processes);
+        //.add_systems(FixedUpdate, spawn_process);
     }
 }
 
@@ -28,6 +29,30 @@ struct ProcessSpawnConfig {
 
 #[derive(Component)]
 struct Process;
+
+fn spawn_initial_processes(mut commands: Commands) {
+    let positions = [
+        Vec2::new(-64.0, -64.0),
+        Vec2::new(0.0, 32.0),
+        Vec2::new(64.0, 0.0),
+    ];
+
+    for pos in positions {
+        commands.spawn((
+            Process,
+            ShapeBundle {
+                path: GeometryBuilder::build_as(&PROCESS_SHAPE),
+                spatial: SpatialBundle::from_transform(Transform {
+                    translation: pos.extend(0.0),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            Fill::color(DARK_GREEN.with_alpha(0.3)),
+            Stroke::new(GREEN, 2.0),
+        ));
+    }
+}
 
 fn spawn_process(
     time: Res<Time>,
