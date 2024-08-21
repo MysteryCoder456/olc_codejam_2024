@@ -13,45 +13,55 @@ use crate::MousePosition;
 pub struct MemoryBusPlugin;
 impl Plugin for MemoryBusPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(TrackPlacementConfig { from: None })
-            .add_systems(
-                Startup,
-                (spawn_memory_bus_station, spawn_track_placement_indicator),
-            )
-            .add_systems(
-                Update,
-                (place_track, track_placement_indicator_position).chain(),
-            );
+        app.insert_resource(TrackPlacementConfig {
+            from: None,
+            next_from: None,
+            next_from_theshold: 8.0,
+        })
+        .add_systems(
+            Startup,
+            (spawn_memory_bus_station, spawn_track_placement_indicator),
+        )
+        .add_systems(
+            Update,
+            (place_track, track_placement_indicator_position).chain(),
+        );
     }
 }
 
 #[derive(Resource)]
 struct TrackPlacementConfig {
     from: Option<Vec2>,
+    next_from: Option<Vec2>,
+    next_from_theshold: f32,
 }
-
-#[derive(Component)]
-struct TrackPlacementIndicator;
 
 #[derive(Component)]
 struct Track;
 
 #[derive(Component)]
+struct TrackPlacementIndicator;
+
+#[derive(Component)]
 struct MemoryBusStation;
 
-fn spawn_memory_bus_station(mut commands: Commands) {
-    let shape = RegularPolygon {
-        sides: 4,
-        center: Vec2::ZERO,
-        feature: RegularPolygonFeature::Apothem(16.0),
-    };
+fn spawn_memory_bus_station(
+    mut placement_config: ResMut<TrackPlacementConfig>,
+    mut commands: Commands,
+) {
+    let spawn_location = Vec2::ZERO;
+    placement_config.next_from = Some(spawn_location);
 
     commands.spawn((
         MemoryBusStation,
         ShapeBundle {
-            path: GeometryBuilder::build_as(&shape),
+            path: GeometryBuilder::build_as(&RegularPolygon {
+                sides: 4,
+                center: Vec2::ZERO,
+                feature: RegularPolygonFeature::Apothem(16.0),
+            }),
             spatial: SpatialBundle {
-                transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+                transform: Transform::from_translation(spawn_location.extend(0.0)),
                 ..Default::default()
             },
             ..Default::default()
@@ -67,6 +77,7 @@ fn spawn_track_placement_indicator(mut commands: Commands) {
         ShapeBundle {
             path: GeometryBuilder::build_as(&Line(Vec2::ZERO, Vec2::ZERO)),
             spatial: SpatialBundle {
+                transform: Transform::from_translation(Vec3::new(0.0, 0.0, -2.0)),
                 visibility: Visibility::Hidden,
                 ..Default::default()
             },
@@ -100,27 +111,36 @@ fn place_track(
 ) {
     let mut indicator_visibility = q_placement_indicator.single_mut();
 
-    for event in mouse_button_events.read() {
-        if !(event.button == MouseButton::Left && event.state == ButtonState::Pressed) {
-            continue;
-        }
+    if placement_config.next_from.is_none() {
+        return;
+    }
+    let next_placement = placement_config.next_from.unwrap();
 
+    for _ in mouse_button_events
+        .read()
+        .filter(|ev| ev.button == MouseButton::Left && ev.state == ButtonState::Pressed)
+    {
         if let Some(from) = placement_config.from {
             placement_config.from = None;
             *indicator_visibility = Visibility::Hidden;
 
             let to = mouse_pos.0;
+            placement_config.next_from = Some(to);
 
             // Place down track
             commands.spawn((
                 Track,
                 ShapeBundle {
                     path: GeometryBuilder::build_as(&Line(from, to)),
+                    spatial: SpatialBundle {
+                        transform: Transform::from_translation(Vec3::new(0.0, 0.0, -1.0)),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 Stroke::new(WHITE, 8.0),
             ));
-        } else {
+        } else if mouse_pos.0.distance(next_placement) <= placement_config.next_from_theshold {
             placement_config.from = Some(mouse_pos.0);
             *indicator_visibility = Visibility::Inherited;
         }
