@@ -11,6 +11,14 @@ const PROCESS_SHAPE: RegularPolygon = RegularPolygon {
     center: Vec2::ZERO,
 };
 
+#[derive(Resource)]
+struct ProcessSpawnConfig {
+    timer: Timer,
+}
+
+#[derive(Component)]
+struct Process;
+
 pub struct ProcessPlugin;
 impl Plugin for ProcessPlugin {
     fn build(&self, app: &mut App) {
@@ -21,14 +29,6 @@ impl Plugin for ProcessPlugin {
         //.add_systems(FixedUpdate, spawn_process);
     }
 }
-
-#[derive(Resource)]
-struct ProcessSpawnConfig {
-    timer: Timer,
-}
-
-#[derive(Component)]
-struct Process;
 
 fn spawn_initial_processes(mut commands: Commands) {
     let positions = [

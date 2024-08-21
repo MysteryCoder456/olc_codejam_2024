@@ -10,6 +10,22 @@ use bevy_prototype_lyon::{
 
 use crate::MousePosition;
 
+#[derive(Resource)]
+struct TrackPlacementConfig {
+    from: Option<Vec2>,
+    next_from: Option<Vec2>,
+    next_from_theshold: f32,
+}
+
+#[derive(Component)]
+struct Track;
+
+#[derive(Component)]
+struct TrackPlacementIndicator;
+
+#[derive(Component)]
+struct MemoryBusStation;
+
 pub struct MemoryBusPlugin;
 impl Plugin for MemoryBusPlugin {
     fn build(&self, app: &mut App) {
@@ -28,22 +44,6 @@ impl Plugin for MemoryBusPlugin {
         );
     }
 }
-
-#[derive(Resource)]
-struct TrackPlacementConfig {
-    from: Option<Vec2>,
-    next_from: Option<Vec2>,
-    next_from_theshold: f32,
-}
-
-#[derive(Component)]
-struct Track;
-
-#[derive(Component)]
-struct TrackPlacementIndicator;
-
-#[derive(Component)]
-struct MemoryBusStation;
 
 fn spawn_memory_bus_station(
     mut placement_config: ResMut<TrackPlacementConfig>,
