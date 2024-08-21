@@ -33,7 +33,7 @@ struct Process;
 fn spawn_initial_processes(mut commands: Commands) {
     let positions = [
         Vec2::new(-64.0, -64.0),
-        Vec2::new(0.0, 32.0),
+        Vec2::new(0.0, 128.0),
         Vec2::new(64.0, 0.0),
     ];
 

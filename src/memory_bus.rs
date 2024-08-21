@@ -3,7 +3,10 @@ use bevy::{
     input::{mouse::MouseButtonInput, ButtonState},
     prelude::*,
 };
-use bevy_prototype_lyon::{prelude::*, shapes::Line};
+use bevy_prototype_lyon::{
+    prelude::*,
+    shapes::{Line, RegularPolygon, RegularPolygonFeature},
+};
 
 use crate::MousePosition;
 
@@ -11,7 +14,10 @@ pub struct MemoryBusPlugin;
 impl Plugin for MemoryBusPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(TrackPlacementConfig { from: None })
-            .add_systems(Startup, spawn_track_placement_indicator)
+            .add_systems(
+                Startup,
+                (spawn_memory_bus_station, spawn_track_placement_indicator),
+            )
             .add_systems(
                 Update,
                 (place_track, track_placement_indicator_position).chain(),
@@ -26,6 +32,34 @@ struct TrackPlacementConfig {
 
 #[derive(Component)]
 struct TrackPlacementIndicator;
+
+#[derive(Component)]
+struct Track;
+
+#[derive(Component)]
+struct MemoryBusStation;
+
+fn spawn_memory_bus_station(mut commands: Commands) {
+    let shape = RegularPolygon {
+        sides: 4,
+        center: Vec2::ZERO,
+        feature: RegularPolygonFeature::Apothem(16.0),
+    };
+
+    commands.spawn((
+        MemoryBusStation,
+        ShapeBundle {
+            path: GeometryBuilder::build_as(&shape),
+            spatial: SpatialBundle {
+                transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        Fill::color(DARK_GREEN.with_alpha(0.3)),
+        Stroke::new(GREEN, 2.0),
+    ));
+}
 
 fn spawn_track_placement_indicator(mut commands: Commands) {
     commands.spawn((
@@ -62,6 +96,7 @@ fn place_track(
     mut q_placement_indicator: Query<&mut Visibility, With<TrackPlacementIndicator>>,
     mut placement_config: ResMut<TrackPlacementConfig>,
     mut mouse_button_events: EventReader<MouseButtonInput>,
+    mut commands: Commands,
 ) {
     let mut indicator_visibility = q_placement_indicator.single_mut();
 
@@ -75,9 +110,16 @@ fn place_track(
             *indicator_visibility = Visibility::Hidden;
 
             let to = mouse_pos.0;
-            println!("From: {}\tTo: {}", &from, &to);
 
-            // TODO: Place down track
+            // Place down track
+            commands.spawn((
+                Track,
+                ShapeBundle {
+                    path: GeometryBuilder::build_as(&Line(from, to)),
+                    ..Default::default()
+                },
+                Stroke::new(WHITE, 8.0),
+            ));
         } else {
             placement_config.from = Some(mouse_pos.0);
             *indicator_visibility = Visibility::Inherited;
