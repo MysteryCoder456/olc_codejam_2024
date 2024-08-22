@@ -156,8 +156,8 @@ fn place_track(
             placement_config.from = None;
             *indicator_visibility = Visibility::Hidden;
 
-            // Get the position of any process entity that was "clicked", or return mouse position
-            // if none were clicked.
+            // Get the position of any process entity near the mouse, otherwise return mouse
+            // position
             let to = q_process
                 .iter()
                 .filter_map(|tf| {
