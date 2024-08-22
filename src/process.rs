@@ -17,7 +17,7 @@ struct ProcessSpawnConfig {
 }
 
 #[derive(Component)]
-struct Process;
+pub struct Process;
 
 pub struct ProcessPlugin;
 impl Plugin for ProcessPlugin {
@@ -43,7 +43,7 @@ fn spawn_initial_processes(mut commands: Commands) {
             ShapeBundle {
                 path: GeometryBuilder::build_as(&PROCESS_SHAPE),
                 spatial: SpatialBundle::from_transform(Transform {
-                    translation: pos.extend(0.0),
+                    translation: pos.extend(20.0),
                     ..Default::default()
                 }),
                 ..Default::default()
