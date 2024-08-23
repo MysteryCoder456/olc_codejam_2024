@@ -32,9 +32,9 @@ impl Plugin for ProcessPlugin {
 
 fn spawn_initial_processes(mut commands: Commands) {
     let positions = [
-        Vec2::new(-64.0, -64.0),
-        Vec2::new(0.0, 128.0),
-        Vec2::new(64.0, 0.0),
+        Vec2::new(-128.0, -128.0),
+        Vec2::new(-64.0, 128.0),
+        Vec2::new(96.0, 0.0),
     ];
 
     for pos in positions {

@@ -1,7 +1,6 @@
 use bevy::{
     color::palettes::css::*,
     input::{mouse::MouseButtonInput, ButtonState},
-    math::NormedVectorSpace,
     prelude::*,
 };
 use bevy_prototype_lyon::{
@@ -18,7 +17,10 @@ struct TrackPlacementConfig {
 }
 
 #[derive(Component)]
-struct Track;
+struct Track {
+    from: Vec2,
+    to: Vec2,
+}
 
 #[derive(Component)]
 struct TrackEnd;
@@ -27,7 +29,10 @@ struct TrackEnd;
 struct TrackPlacementIndicator;
 
 #[derive(Component)]
-struct MemoryBus;
+struct MemoryBus {
+    commute_timer: Timer,
+    current_commute: Option<(Vec2, Vec2)>, // (from, to)
+}
 
 #[derive(Component)]
 struct MemoryBusStation;
@@ -50,8 +55,12 @@ impl Plugin for MemoryBusPlugin {
         )
         .add_systems(
             Update,
-            (place_track, track_placement_indicator_position).chain(),
-        );
+            (
+                place_track,
+                track_placement_indicator_position.after(place_track),
+            ),
+        )
+        .add_systems(FixedUpdate, memory_bus_commute);
     }
 }
 
@@ -59,10 +68,13 @@ fn spawn_memory_bus(q_station: Query<&Transform, With<MemoryBusStation>>, mut co
     let station_pos = q_station.single().translation;
 
     commands.spawn((
-        MemoryBus,
+        MemoryBus {
+            commute_timer: Timer::from_seconds(5.0, TimerMode::Repeating),
+            current_commute: None,
+        },
         ShapeBundle {
             path: GeometryBuilder::build_as(&Rectangle {
-                extents: Vec2::new(16.0, 10.0),
+                extents: Vec2::new(16.0, 16.0),
                 origin: RectangleOrigin::Center,
             }),
             spatial: SpatialBundle {
@@ -73,6 +85,50 @@ fn spawn_memory_bus(q_station: Query<&Transform, With<MemoryBusStation>>, mut co
         },
         Fill::color(GREEN),
     ));
+}
+
+fn memory_bus_commute(
+    time: Res<Time>,
+    q_tracks: Query<&Track>,
+    mut q_memory_bus: Query<(&mut Transform, &mut MemoryBus)>,
+) {
+    let (mut bus_tf, mut bus) = q_memory_bus.single_mut();
+
+    bus.commute_timer.tick(time.delta());
+
+    // Find and "attach" to next track piece
+    if bus.commute_timer.just_finished() {
+        let next_track = q_tracks
+            .iter()
+            .filter_map(|track| {
+                if track.from.distance(bus_tf.translation.truncate()) <= 4.0 {
+                    Some(track)
+                } else {
+                    None
+                }
+            })
+            .next();
+
+        if let Some(next_track) = next_track {
+            let from = next_track.from;
+            let to = next_track.to;
+
+            bus.current_commute = Some((from, to));
+        } else {
+            // TODO: Bus probably reached end of track, so retrace steps and go backwards
+            bus.current_commute = None;
+        }
+    }
+
+    // Lerp from `from` to `to`
+    if let Some((from, to)) = bus.current_commute {
+        let elapsed = bus.commute_timer.elapsed_secs();
+        let duration = bus.commute_timer.duration().as_secs_f32();
+        let pos = from + (to - from) * elapsed / duration;
+
+        bus_tf.translation.x = pos.x;
+        bus_tf.translation.y = pos.y;
+    }
 }
 
 fn spawn_memory_bus_station(mut commands: Commands) {
@@ -178,7 +234,7 @@ fn place_track(
 
             // Place down track
             commands.spawn((
-                Track,
+                Track { from, to },
                 ShapeBundle {
                     path: GeometryBuilder::build_as(&Line(from, to)),
                     spatial: SpatialBundle {
