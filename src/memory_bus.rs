@@ -32,6 +32,7 @@ struct TrackPlacementIndicator;
 struct MemoryBus {
     commute_timer: Timer,
     current_commute: Option<(Vec2, Vec2)>, // (from, to)
+    retracing_commute: bool,
 }
 
 #[derive(Component)]
@@ -71,6 +72,7 @@ fn spawn_memory_bus(q_station: Query<&Transform, With<MemoryBusStation>>, mut co
         MemoryBus {
             commute_timer: Timer::from_seconds(5.0, TimerMode::Repeating),
             current_commute: None,
+            retracing_commute: false,
         },
         ShapeBundle {
             path: GeometryBuilder::build_as(&Rectangle {
@@ -101,11 +103,23 @@ fn memory_bus_commute(
         let next_track = q_tracks
             .iter()
             .filter_map(|track| {
-                if track.from.distance(bus_tf.translation.truncate()) <= 4.0 {
-                    Some(track)
+                let mut t = Track {
+                    from: track.from,
+                    to: track.to,
+                };
+
+                if !bus.retracing_commute
+                    && track.from.distance(bus_tf.translation.truncate()) <= 4.0
+                {
+                } else if bus.retracing_commute
+                    && track.to.distance(bus_tf.translation.truncate()) <= 4.0
+                {
+                    t.to = track.from;
+                    t.from = track.to;
                 } else {
-                    None
+                    return None;
                 }
+                Some(t)
             })
             .next();
 
@@ -114,9 +128,10 @@ fn memory_bus_commute(
             let to = next_track.to;
 
             bus.current_commute = Some((from, to));
-        } else {
-            // TODO: Bus probably reached end of track, so retrace steps and go backwards
-            bus.current_commute = None;
+        } else if let Some((from, to)) = bus.current_commute {
+            // Bus probably reached end of track, so retrace steps and go backwards
+            bus.current_commute = Some((to, from));
+            bus.retracing_commute = true;
         }
     }
 
