@@ -3,12 +3,10 @@ name = "olc_codejam_2024"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-bevy = "0.14"
-bevy_prototype_lyon = "0.12"
-rand = "0.8"
-
 [profile.wasm-release]
 inherits = "release"
 opt-level = "z"
+
+[dependencies]
+bevy = "0.15"
 
