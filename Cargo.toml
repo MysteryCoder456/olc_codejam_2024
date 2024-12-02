@@ -9,4 +9,8 @@ opt-level = "z"
 
 [dependencies]
 bevy = "0.15"
+bevy_prototype_lyon = "0.13"
+
+[dev-dependencies]
+bevy_dylib = "0.15"
 
