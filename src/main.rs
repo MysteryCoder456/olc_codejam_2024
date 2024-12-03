@@ -6,6 +6,10 @@ use bevy::{
 use bevy_prototype_lyon::prelude::*;
 
 mod process;
+mod track;
+
+#[derive(Resource)]
+pub struct CursorPosition(Vec2);
 
 fn main() {
     let mut app = App::new();
@@ -16,7 +20,7 @@ fn main() {
         Level::INFO
     };
 
-    app.add_plugins(
+    app.add_plugins((
         DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
@@ -30,11 +34,13 @@ fn main() {
                 level: log_level,
                 ..Default::default()
             }),
-    )
-    .add_plugins(ShapePlugin)
-    .add_plugins(process::ProcessPlugin)
+        ShapePlugin,
+    ))
+    .add_plugins((process::ProcessPlugin, track::TrackPlugin))
+    .insert_resource(CursorPosition(Vec2::ZERO))
     .add_systems(Startup, setup_app)
-    .add_systems(PostStartup, spawn_test_processes);
+    .add_systems(PostStartup, spawn_test_processes)
+    .add_systems(PreUpdate, update_cursor_position);
 
     app.run();
 }
@@ -42,6 +48,22 @@ fn main() {
 fn setup_app(mut commands: Commands, mut clear_color: ResMut<ClearColor>) {
     commands.spawn(Camera2d::default());
     clear_color.0 = Color::BLACK;
+}
+
+fn update_cursor_position(
+    camera_query: Single<(&Camera, &GlobalTransform)>,
+    window: Single<&Window>,
+    mut cursor_position: ResMut<CursorPosition>,
+) {
+    let (camera, camera_transform) = *camera_query;
+    let window = *window;
+
+    if let Some(pos) = window
+        .cursor_position()
+        .and_then(|pos| camera.viewport_to_world_2d(camera_transform, pos).ok())
+    {
+        cursor_position.0 = pos;
+    }
 }
 
 fn spawn_test_processes(mut events: EventWriter<process::SpawnProcessEvent>) {
