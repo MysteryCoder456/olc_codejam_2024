@@ -35,7 +35,7 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
         commands.spawn((
             ShapeBundle {
                 path: GeometryBuilder::build_as(&shape),
-                transform: Transform::from_translation(event.position.extend(0.0)),
+                transform: Transform::from_translation(event.position.extend(10.0)),
                 ..Default::default()
             },
             Fill::color(GREEN),
