@@ -51,9 +51,9 @@ fn setup_app(mut commands: Commands, mut clear_color: ResMut<ClearColor>) {
 }
 
 fn update_cursor_position(
+    mut cursor_position: ResMut<CursorPosition>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
     window: Single<&Window>,
-    mut cursor_position: ResMut<CursorPosition>,
 ) {
     let (camera, camera_transform) = *camera_query;
     let window = *window;

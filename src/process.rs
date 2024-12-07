@@ -9,6 +9,9 @@ pub struct SpawnProcessEvent {
     pub position: Vec2,
 }
 
+#[derive(Component)]
+pub struct Process;
+
 pub struct ProcessPlugin;
 
 impl Plugin for ProcessPlugin {
@@ -19,9 +22,6 @@ impl Plugin for ProcessPlugin {
         );
     }
 }
-
-#[derive(Component)]
-struct Process;
 
 fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessEvent>) {
     let shape = RegularPolygon {

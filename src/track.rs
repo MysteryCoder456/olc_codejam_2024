@@ -1,4 +1,4 @@
-use crate::CursorPosition;
+use crate::{process::Process, CursorPosition};
 use bevy::{input::common_conditions::input_just_pressed, prelude::*};
 use bevy_prototype_lyon::prelude::*;
 
@@ -8,6 +8,7 @@ impl Plugin for TrackPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(TrackPlacementConfig {
             initial_position: None,
+            process_distance_threshold: 32.0,
             thickness: 6.0,
             color: Color::srgb_u8(184, 115, 51),
         })
@@ -24,6 +25,7 @@ impl Plugin for TrackPlugin {
 #[derive(Resource)]
 struct TrackPlacementConfig {
     initial_position: Option<Vec2>,
+    process_distance_threshold: f32,
     thickness: f32,
     color: Color,
 }
@@ -34,38 +36,82 @@ struct Track {
 }
 
 fn draw_placement_indicator(
+    mut gizmos: Gizmos,
     cursor_position: Res<CursorPosition>,
     placement_config: Res<TrackPlacementConfig>,
-    mut gizmos: Gizmos,
+    process_query: Query<&Transform, With<Process>>,
 ) {
     let Some(initial_position) = placement_config.initial_position else {
         return;
     };
 
+    // Check if the cursor is on or near a process entity
+    let nearest_process = process_query
+        .iter()
+        .map(|transform| transform.translation.truncate())
+        .min_by_key(|position| {
+            let diff = cursor_position.0 - *position;
+            (diff.x * diff.x + diff.y * diff.y) as i32
+        })
+        .and_then(|p| {
+            if p.distance(cursor_position.0) < placement_config.process_distance_threshold {
+                Some(p)
+            } else {
+                None
+            }
+        });
+
+    let to = if let Some(nearest_process) = nearest_process {
+        nearest_process
+    } else {
+        cursor_position.0
+    };
+
     let color = placement_config.color.with_alpha(0.5);
-    let diff = cursor_position.0 - initial_position;
+    let diff = to - initial_position;
 
     let corner = if diff.x.abs() >= diff.y.abs() {
-        Vec2::new(cursor_position.0.x, initial_position.y)
+        Vec2::new(to.x, initial_position.y)
     } else {
-        Vec2::new(initial_position.x, cursor_position.0.y)
+        Vec2::new(initial_position.x, to.y)
     };
 
     gizmos.line_2d(initial_position, corner, color);
-    gizmos.line_2d(corner, cursor_position.0, color);
+    gizmos.line_2d(corner, to, color);
 }
 
 fn place_track(
-    cursor_position: Res<CursorPosition>,
-    mut placement_config: ResMut<TrackPlacementConfig>,
     mut commands: Commands,
+    mut placement_config: ResMut<TrackPlacementConfig>,
+    cursor_position: Res<CursorPosition>,
+    process_query: Query<&Transform, With<Process>>,
 ) {
-    let Some(from) = placement_config.initial_position else {
-        debug!("Setting initial position to {:?}", cursor_position.0);
-        placement_config.initial_position = Some(cursor_position.0);
+    // Check if the cursor is on or near a process entity
+    let nearest_process = process_query
+        .iter()
+        .map(|transform| transform.translation.truncate())
+        .min_by_key(|position| {
+            let diff = cursor_position.0 - *position;
+            (diff.x * diff.x + diff.y * diff.y) as i32
+        })
+        .and_then(|p| {
+            if p.distance(cursor_position.0) < placement_config.process_distance_threshold {
+                Some(p)
+            } else {
+                None
+            }
+        });
+
+    let Some(nearest_process) = nearest_process else {
         return;
     };
-    let to = cursor_position.0;
+
+    let Some(from) = placement_config.initial_position else {
+        debug!("Setting initial position to {:?}", cursor_position.0);
+        placement_config.initial_position = Some(nearest_process);
+        return;
+    };
+    let to = nearest_process;
 
     debug!("Placed track from {:?} to {:?}", from, to);
 
