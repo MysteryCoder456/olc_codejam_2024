@@ -8,6 +8,7 @@ impl Plugin for TrackPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(TrackPlacementConfig {
             initial_position: None,
+            source: None,
             process_distance_threshold: 32.0,
             thickness: 6.0,
             color: Color::srgb_u8(184, 115, 51),
@@ -25,6 +26,7 @@ impl Plugin for TrackPlugin {
 #[derive(Resource)]
 struct TrackPlacementConfig {
     initial_position: Option<Vec2>,
+    source: Option<Entity>,
     process_distance_threshold: f32,
     thickness: f32,
     color: Color,
@@ -33,6 +35,8 @@ struct TrackPlacementConfig {
 #[derive(Component)]
 struct Track {
     path: Vec<Vec2>,
+    source: Entity,
+    destination: Entity,
 }
 
 fn draw_placement_indicator(
@@ -46,7 +50,7 @@ fn draw_placement_indicator(
     };
 
     // Check if the cursor is on or near a process entity
-    let nearest_process = process_query
+    let process_position = process_query
         .iter()
         .map(|transform| transform.translation.truncate())
         .min_by_key(|position| {
@@ -61,8 +65,8 @@ fn draw_placement_indicator(
             }
         });
 
-    let to = if let Some(nearest_process) = nearest_process {
-        nearest_process
+    let to = if let Some(process_position) = process_position {
+        process_position
     } else {
         cursor_position.0
     };
@@ -84,34 +88,42 @@ fn place_track(
     mut commands: Commands,
     mut placement_config: ResMut<TrackPlacementConfig>,
     cursor_position: Res<CursorPosition>,
-    process_query: Query<&Transform, With<Process>>,
+    process_query: Query<(Entity, &Transform), With<Process>>,
 ) {
     // Check if the cursor is on or near a process entity
-    let nearest_process = process_query
+    let Some((process, process_position)) = process_query
         .iter()
-        .map(|transform| transform.translation.truncate())
-        .min_by_key(|position| {
-            let diff = cursor_position.0 - *position;
+        .map(|(e, tf)| (e, tf.translation.truncate()))
+        .min_by_key(|(_e, pos)| {
+            let diff = cursor_position.0 - *pos;
             (diff.x * diff.x + diff.y * diff.y) as i32
         })
-        .and_then(|p| {
-            if p.distance(cursor_position.0) < placement_config.process_distance_threshold {
-                Some(p)
+        .and_then(|(e, pos)| {
+            if pos.distance(cursor_position.0) < placement_config.process_distance_threshold {
+                Some((e, pos))
             } else {
                 None
             }
-        });
-
-    let Some(nearest_process) = nearest_process else {
+        })
+    else {
         return;
     };
 
-    let Some(from) = placement_config.initial_position else {
+    let (Some(from), Some(source)) = (placement_config.initial_position, placement_config.source)
+    else {
         debug!("Setting initial position to {:?}", cursor_position.0);
-        placement_config.initial_position = Some(nearest_process);
+        placement_config.initial_position = Some(process_position);
+        placement_config.source = Some(process);
         return;
     };
-    let to = nearest_process;
+
+    let destination = process;
+    let to = process_position;
+
+    // Prevent self-connections
+    if source == destination || from == to {
+        return;
+    }
 
     debug!("Placed track from {:?} to {:?}", from, to);
 
@@ -176,6 +188,8 @@ fn place_track(
         Fill::color(placement_config.color),
         Track {
             path: vec![from, corner, to],
+            source,
+            destination,
         },
     ));
 
