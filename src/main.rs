@@ -5,11 +5,15 @@ use bevy::{
 };
 use bevy_prototype_lyon::prelude::*;
 
+mod bus;
 mod process;
 mod track;
 
 #[derive(Resource)]
 pub struct CursorPosition(Vec2);
+
+#[derive(Component)]
+pub struct BusStop;
 
 fn main() {
     let mut app = App::new();
@@ -36,10 +40,10 @@ fn main() {
             }),
         ShapePlugin,
     ))
-    .add_plugins((process::ProcessPlugin, track::TrackPlugin))
+    .add_plugins((process::ProcessPlugin, track::TrackPlugin, bus::BusPlugin))
     .insert_resource(CursorPosition(Vec2::ZERO))
     .add_systems(Startup, setup_app)
-    .add_systems(PostStartup, spawn_test_processes)
+    .add_systems(PostStartup, spawn_test_entities)
     .add_systems(PreUpdate, update_cursor_position);
 
     app.run();
@@ -66,8 +70,12 @@ fn update_cursor_position(
     }
 }
 
-fn spawn_test_processes(mut events: EventWriter<process::SpawnProcessEvent>) {
-    events.send_batch([
+fn spawn_test_entities(
+    mut process_events: EventWriter<process::SpawnProcessEvent>,
+    mut station_events: EventWriter<bus::SpawnBusStationEvent>,
+    mut bus_events: EventWriter<bus::SpawnBusEvent>,
+) {
+    process_events.send_batch([
         process::SpawnProcessEvent {
             position: Vec2::new(-100.0, 0.0),
         },
@@ -78,4 +86,8 @@ fn spawn_test_processes(mut events: EventWriter<process::SpawnProcessEvent>) {
             position: Vec2::new(120.0, -100.0),
         },
     ]);
+    station_events.send(bus::SpawnBusStationEvent {
+        position: Vec2::new(0.0, -150.0),
+    });
+    bus_events.send(bus::SpawnBusEvent);
 }

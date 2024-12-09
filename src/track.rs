@@ -1,6 +1,6 @@
-use crate::{process::Process, CursorPosition};
+use crate::{process::Process, BusStop, CursorPosition};
 use bevy::{input::common_conditions::input_just_pressed, prelude::*};
-use bevy_prototype_lyon::prelude::*;
+use bevy_prototype_lyon::{prelude::*, shapes::RoundedPolygon};
 
 pub struct TrackPlugin;
 
@@ -43,14 +43,14 @@ fn draw_placement_indicator(
     mut gizmos: Gizmos,
     cursor_position: Res<CursorPosition>,
     placement_config: Res<TrackPlacementConfig>,
-    process_query: Query<&Transform, With<Process>>,
+    stop_query: Query<&Transform, With<BusStop>>,
 ) {
     let Some(initial_position) = placement_config.initial_position else {
         return;
     };
 
     // Check if the cursor is on or near a process entity
-    let process_position = process_query
+    let stop_position = stop_query
         .iter()
         .map(|transform| transform.translation.truncate())
         .min_by_key(|position| {
@@ -65,8 +65,8 @@ fn draw_placement_indicator(
             }
         });
 
-    let to = if let Some(process_position) = process_position {
-        process_position
+    let to = if let Some(stop_position) = stop_position {
+        stop_position
     } else {
         cursor_position.0
     };
@@ -88,10 +88,10 @@ fn place_track(
     mut commands: Commands,
     mut placement_config: ResMut<TrackPlacementConfig>,
     cursor_position: Res<CursorPosition>,
-    process_query: Query<(Entity, &Transform), With<Process>>,
+    stop_query: Query<(Entity, &Transform), With<BusStop>>,
 ) {
     // Check if the cursor is on or near a process entity
-    let Some((process, process_position)) = process_query
+    let Some((stop, stop_position)) = stop_query
         .iter()
         .map(|(e, tf)| (e, tf.translation.truncate()))
         .min_by_key(|(_e, pos)| {
@@ -112,13 +112,13 @@ fn place_track(
     let (Some(from), Some(source)) = (placement_config.initial_position, placement_config.source)
     else {
         debug!("Setting initial position to {:?}", cursor_position.0);
-        placement_config.initial_position = Some(process_position);
-        placement_config.source = Some(process);
+        placement_config.initial_position = Some(stop_position);
+        placement_config.source = Some(stop);
         return;
     };
 
-    let destination = process;
-    let to = process_position;
+    let destination = stop;
+    let to = stop_position;
 
     // Prevent self-connections
     if source == destination || from == to {
@@ -130,12 +130,13 @@ fn place_track(
     let radius = placement_config.thickness / 2.0;
     let diff = to - from;
     let x_diff_greater = diff.x.abs() >= diff.y.abs();
+
+    // Construct track shape
     let corner = if x_diff_greater {
         Vec2::new(to.x, from.y)
     } else {
         Vec2::new(from.x, to.y)
     };
-
     let points = if diff.x >= 0.0 && diff.y >= 0.0 {
         vec![
             from + Vec2::new(-radius, radius * if x_diff_greater { 1.0 } else { -1.0 }),
@@ -173,7 +174,7 @@ fn place_track(
             from + Vec2::new(radius, radius * if x_diff_greater { -1.0 } else { 1.0 }),
         ]
     };
-    let shape = shapes::RoundedPolygon {
+    let shape = RoundedPolygon {
         points,
         closed: true,
         radius,

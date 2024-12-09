@@ -1,3 +1,4 @@
+use crate::BusStop;
 use bevy::{color::palettes::css::*, prelude::*};
 use bevy_prototype_lyon::{
     prelude::*,
@@ -41,6 +42,7 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
             Fill::color(GREEN),
             Stroke::new(DARK_GREEN, 4.0),
             Process,
+            BusStop,
         ));
     }
 }
