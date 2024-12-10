@@ -130,13 +130,12 @@ fn bus_commutes(
                 let to = track.path[path_idx + 1];
 
                 bus_tf.translation = from.lerp(to, line_progress).extend(bus_tf.translation.z);
+                bus_tf.rotation = Quat::from_rotation_z((to - from).to_angle());
             }
             CommuteState::Waiting(stop_entity) => {
                 bus.stop_wait_timer.tick(time.delta());
 
                 if bus.stop_wait_timer.just_finished() {
-                    debug!("Bus is starting new commute.");
-
                     let Ok(stop_tf) = stop_query.get(stop_entity) else {
                         warn!("Bus was waiting at a non-existent stop. This should not happen.");
                         continue;
@@ -154,6 +153,7 @@ fn bus_commutes(
                         })
                         .next();
 
+                    debug!("Bus is starting new commute.");
                     if let Some(track_entity) = track_entity {
                         bus.commute_state = CommuteState::Commuting(track_entity);
                     } else {
