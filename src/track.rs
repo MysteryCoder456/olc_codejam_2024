@@ -1,6 +1,13 @@
-use crate::{process::Process, BusStop, CursorPosition};
+use crate::{BusStop, CursorPosition};
 use bevy::{input::common_conditions::input_just_pressed, prelude::*};
 use bevy_prototype_lyon::{prelude::*, shapes::RoundedPolygon};
+
+#[derive(Component)]
+pub struct Track {
+    pub path: Vec<Vec2>,
+    pub source: Entity,
+    pub destination: Entity,
+}
 
 pub struct TrackPlugin;
 
@@ -30,13 +37,6 @@ struct TrackPlacementConfig {
     process_distance_threshold: f32,
     thickness: f32,
     color: Color,
-}
-
-#[derive(Component)]
-struct Track {
-    path: Vec<Vec2>,
-    source: Entity,
-    destination: Entity,
 }
 
 fn draw_placement_indicator(

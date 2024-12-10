@@ -1,4 +1,6 @@
-use crate::BusStop;
+use std::time::Duration;
+
+use crate::{track::Track, BusStop};
 use bevy::{color::palettes::css::*, prelude::*};
 use bevy_prototype_lyon::{
     prelude::*,
@@ -25,12 +27,22 @@ impl Plugin for BusPlugin {
                     spawn_bus, // FIXME: doesn't run at all with this condition applied: .run_if(on_event::<SpawnBusEvent>),
                     spawn_bus_station.run_if(on_event::<SpawnBusStationEvent>),
                 ),
-            );
+            )
+            .add_systems(FixedUpdate, bus_commutes);
     }
 }
 
+enum CommuteState {
+    Commuting(Entity),
+    Waiting(Entity),
+}
+
 #[derive(Component)]
-struct Bus;
+struct Bus {
+    commute_timer: Timer,
+    stop_wait_timer: Timer,
+    commute_state: CommuteState,
+}
 
 #[derive(Component)]
 struct BusStation;
@@ -38,9 +50,9 @@ struct BusStation;
 fn spawn_bus(
     mut commands: Commands,
     mut events: EventReader<SpawnBusEvent>,
-    station_query: Single<&Transform, With<BusStation>>,
+    station_query: Single<(Entity, &Transform), With<BusStation>>,
 ) {
-    let station_tf = *station_query;
+    let (station_entity, station_tf) = *station_query;
     let shape = Rectangle {
         extents: Vec2::new(24.0, 16.0),
         origin: RectangleOrigin::Center,
@@ -55,7 +67,11 @@ fn spawn_bus(
                 ..Default::default()
             },
             Fill::color(ORANGE),
-            Bus,
+            Bus {
+                commute_timer: Timer::new(Duration::from_secs(5), TimerMode::Repeating),
+                stop_wait_timer: Timer::new(Duration::from_secs(8), TimerMode::Repeating),
+                commute_state: CommuteState::Waiting(station_entity),
+            },
         ));
     }
 }
@@ -79,5 +95,75 @@ fn spawn_bus_station(mut commands: Commands, mut events: EventReader<SpawnBusSta
             BusStation,
             BusStop,
         ));
+    }
+}
+
+fn bus_commutes(
+    time: Res<Time<Fixed>>,
+    mut bus_query: Query<(&mut Bus, &mut Transform)>,
+    track_query: Query<(Entity, &Track)>,
+    stop_query: Query<&Transform, (With<BusStop>, Without<Bus>)>,
+) {
+    for (mut bus, mut bus_tf) in bus_query.iter_mut() {
+        match bus.commute_state {
+            CommuteState::Commuting(track_entity) => {
+                let Ok((_, track)) = track_query.get(track_entity) else {
+                    warn!("Bus is commuting on a non-existent track. This should not happen.");
+                    continue;
+                };
+
+                bus.commute_timer.tick(time.delta());
+                if bus.commute_timer.just_finished() {
+                    debug!("Bus is now waiting at stop {:?}", track.destination);
+                    bus.commute_state = CommuteState::Waiting(track.destination);
+                    bus_tf.translation = track.path.last().unwrap().extend(bus_tf.translation.z);
+                    continue;
+                }
+
+                // Calculate bus's position on the track based on the elapsed time
+                let total_progress =
+                    bus.commute_timer.elapsed_secs() / bus.commute_timer.duration().as_secs_f32();
+                let line_progress = total_progress * (track.path.len() - 1) as f32 % 1.0;
+
+                let path_idx = (total_progress * (track.path.len() - 1) as f32).floor() as usize;
+                let from = track.path[path_idx];
+                let to = track.path[path_idx + 1];
+
+                bus_tf.translation = from.lerp(to, line_progress).extend(bus_tf.translation.z);
+            }
+            CommuteState::Waiting(stop_entity) => {
+                bus.stop_wait_timer.tick(time.delta());
+
+                if bus.stop_wait_timer.just_finished() {
+                    debug!("Bus is starting new commute.");
+
+                    let Ok(stop_tf) = stop_query.get(stop_entity) else {
+                        warn!("Bus was waiting at a non-existent stop. This should not happen.");
+                        continue;
+                    };
+
+                    // Find a track to commute on
+                    let track_entity = track_query
+                        .iter()
+                        .filter_map(|(track_entity, track)| {
+                            if track.path[0] == stop_tf.translation.truncate() {
+                                Some(track_entity)
+                            } else {
+                                None
+                            }
+                        })
+                        .next();
+
+                    if let Some(track_entity) = track_entity {
+                        bus.commute_state = CommuteState::Commuting(track_entity);
+                    } else {
+                        // TODO: Reached end of track. Reverse commute.
+                    }
+                    continue;
+                }
+
+                // TODO: wait at station and do whatever
+            }
+        }
     }
 }
