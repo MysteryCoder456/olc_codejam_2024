@@ -24,8 +24,10 @@ impl Plugin for BusPlugin {
             .add_systems(
                 Update,
                 (
-                    spawn_bus, // FIXME: doesn't run at all with this condition applied: .run_if(on_event::<SpawnBusEvent>),
                     spawn_bus_station.run_if(on_event::<SpawnBusStationEvent>),
+                    spawn_bus
+                        .run_if(on_event::<SpawnBusEvent>)
+                        .after(spawn_bus_station),
                 ),
             )
             .add_systems(FixedUpdate, bus_commutes);
