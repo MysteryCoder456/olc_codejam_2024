@@ -1,18 +1,30 @@
 use std::time::Duration;
 
 use crate::{track::Track, BusStop};
-use bevy::{color::palettes::css::*, prelude::*};
+use bevy::{
+    color::palettes::{css::INDIAN_RED, tailwind::CYAN_600},
+    prelude::*,
+};
 use bevy_prototype_lyon::{
     prelude::*,
     shapes::{Rectangle, RegularPolygon, RegularPolygonFeature},
 };
 
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum StationType {
+    Memory,
+    GarbageCollector,
+}
+
 #[derive(Event)]
-pub struct SpawnBusEvent;
+pub struct SpawnBusEvent {
+    pub station_type: StationType,
+}
 
 #[derive(Event)]
 pub struct SpawnBusStationEvent {
     pub position: Vec2,
+    pub station_type: StationType,
 }
 
 pub struct BusPlugin;
@@ -47,34 +59,42 @@ struct Bus {
 }
 
 #[derive(Component)]
-struct BusStation;
+struct BusStation {
+    station_type: StationType,
+}
 
 fn spawn_bus(
     mut commands: Commands,
     mut events: EventReader<SpawnBusEvent>,
-    station_query: Single<(Entity, &Transform), With<BusStation>>,
+    station_query: Query<(Entity, &BusStation, &Transform, &Fill)>,
 ) {
-    let (station_entity, station_tf) = *station_query;
     let shape = Rectangle {
         extents: Vec2::new(24.0, 16.0),
         origin: RectangleOrigin::Center,
         radii: Some(BorderRadii::single(2.0)),
     };
 
-    for _event in events.read() {
-        commands.spawn((
-            ShapeBundle {
-                path: GeometryBuilder::build_as(&shape),
-                transform: Transform::from_translation(station_tf.translation.with_z(20.0)),
-                ..Default::default()
-            },
-            Fill::color(ORANGE),
-            Bus {
-                commute_timer: Timer::new(Duration::from_secs(5), TimerMode::Repeating),
-                stop_wait_timer: Timer::new(Duration::from_secs(8), TimerMode::Repeating),
-                commute_state: CommuteState::Waiting(station_entity),
-            },
-        ));
+    for event in events.read() {
+        for (station_entity, station, station_tf, station_fill) in station_query.iter() {
+            if station.station_type != event.station_type {
+                continue;
+            }
+
+            commands.spawn((
+                ShapeBundle {
+                    path: GeometryBuilder::build_as(&shape),
+                    transform: Transform::from_translation(station_tf.translation.with_z(20.0)),
+                    ..Default::default()
+                },
+                Fill::color(station_fill.color.with_luminance(0.8)),
+                Bus {
+                    commute_timer: Timer::new(Duration::from_secs(5), TimerMode::Repeating),
+                    stop_wait_timer: Timer::new(Duration::from_secs(8), TimerMode::Repeating),
+                    commute_state: CommuteState::Waiting(station_entity),
+                },
+            ));
+            break;
+        }
     }
 }
 
@@ -86,15 +106,22 @@ fn spawn_bus_station(mut commands: Commands, mut events: EventReader<SpawnBusSta
     };
 
     for event in events.read() {
+        let fill_color = match event.station_type {
+            StationType::Memory => CYAN_600,
+            StationType::GarbageCollector => INDIAN_RED,
+        };
+
         commands.spawn((
             ShapeBundle {
                 path: GeometryBuilder::build_as(&shape),
                 transform: Transform::from_translation(event.position.extend(10.0)),
                 ..Default::default()
             },
-            Fill::color(ORANGE_RED),
-            Stroke::new(ORANGE_RED.darker(0.1), 4.0),
-            BusStation,
+            Fill::color(fill_color),
+            Stroke::new(fill_color.darker(0.1), 4.0),
+            BusStation {
+                station_type: event.station_type,
+            },
             BusStop,
         ));
     }
@@ -155,8 +182,8 @@ fn bus_commutes(
                         })
                         .next();
 
-                    debug!("Bus is starting new commute.");
                     if let Some(track_entity) = track_entity {
+                        debug!("Bus is starting new commute.");
                         bus.commute_state = CommuteState::Commuting(track_entity);
                     } else {
                         // TODO: Reached end of track. Reverse commute.

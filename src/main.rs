@@ -86,8 +86,20 @@ fn spawn_test_entities(
             position: Vec2::new(120.0, -100.0),
         },
     ]);
+
     station_events.send(bus::SpawnBusStationEvent {
         position: Vec2::new(0.0, -150.0),
+        station_type: bus::StationType::Memory,
     });
-    bus_events.send(bus::SpawnBusEvent);
+    bus_events.send(bus::SpawnBusEvent {
+        station_type: bus::StationType::Memory,
+    });
+
+    station_events.send(bus::SpawnBusStationEvent {
+        position: Vec2::new(-150.0, 200.0),
+        station_type: bus::StationType::GarbageCollector,
+    });
+    bus_events.send(bus::SpawnBusEvent {
+        station_type: bus::StationType::GarbageCollector,
+    });
 }
