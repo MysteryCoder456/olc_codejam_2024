@@ -85,7 +85,7 @@ fn process_out_of_memory(
         gizmos.curve_2d(curve, times, DARK_GREEN);
 
         // Times up!
-        if process.out_of_memory_timer.finished() {
+        if process.out_of_memory_timer.just_finished() {
             debug!("Process out of memory");
             // TODO: game over
         }
