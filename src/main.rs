@@ -50,7 +50,7 @@ fn main() {
 }
 
 fn setup_app(mut commands: Commands, mut clear_color: ResMut<ClearColor>) {
-    commands.spawn(Camera2d::default());
+    commands.spawn(Camera2d);
     clear_color.0 = Color::BLACK;
 }
 
