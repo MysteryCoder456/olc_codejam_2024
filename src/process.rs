@@ -61,7 +61,7 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
                 Process {
                     memory: 50.0,
                     memory_usage_timer: Timer::from_seconds(
-                        rng.gen_range((5.0)..=(10.0)),
+                        rng.gen_range(5.0..=10.0),
                         TimerMode::Repeating,
                     ),
                     out_of_memory_timer: Timer::from_seconds(60.0, TimerMode::Once),
