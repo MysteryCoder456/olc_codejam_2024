@@ -183,7 +183,7 @@ fn bus_commutes(
                         .next();
 
                     if let Some(track_entity) = track_entity {
-                        debug!("Bus is starting new commute.");
+                        debug!("Bus is starting new commute");
                         bus.commute_state = CommuteState::Commuting(track_entity);
                     } else {
                         // TODO: Reached end of track. Reverse commute.

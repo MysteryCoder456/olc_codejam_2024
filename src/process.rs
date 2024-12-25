@@ -106,6 +106,10 @@ fn process_memory_usage(time: Res<Time<Fixed>>, mut process_query: Query<&mut Pr
             let usage = rng.gen_range::<f32, _>(5.0..=20.0).min(process.memory);
             process.memory -= usage;
             // TODO: increase garbage memory counter
+            debug!(
+                "Process used {} memory, {} remaining",
+                usage, process.memory
+            );
 
             // Update timer with a random duration
             let new_duration = Duration::from_secs_f32(rng.gen_range(2.5..=7.5));
