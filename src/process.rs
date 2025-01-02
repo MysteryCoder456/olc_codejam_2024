@@ -16,6 +16,13 @@ pub struct SpawnProcessEvent {
     pub position: Vec2,
 }
 
+#[derive(Component)]
+pub struct Process {
+    pub memory: f32,
+    memory_usage_timer: Timer,
+    out_of_memory_timer: Timer,
+}
+
 pub struct ProcessPlugin;
 
 impl Plugin for ProcessPlugin {
@@ -30,13 +37,6 @@ impl Plugin for ProcessPlugin {
             )
             .add_systems(FixedUpdate, (process_memory_usage, process_out_of_memory));
     }
-}
-
-#[derive(Component)]
-struct Process {
-    memory: f32,
-    memory_usage_timer: Timer,
-    out_of_memory_timer: Timer,
 }
 
 fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessEvent>) {
@@ -61,7 +61,7 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
                 Process {
                     memory: 50.0,
                     memory_usage_timer: Timer::from_seconds(
-                        rng.gen_range(15.0..=30.0),
+                        rng.gen_range(7.5..=12.5),
                         TimerMode::Repeating,
                     ),
                     out_of_memory_timer: Timer::from_seconds(60.0, TimerMode::Once),
@@ -103,7 +103,7 @@ fn process_memory_usage(time: Res<Time<Fixed>>, mut process_query: Query<&mut Pr
 
         if process.memory_usage_timer.just_finished() && process.memory > 0.0 {
             // "Use" memory
-            let usage = rng.gen_range::<f32, _>(5.0..=20.0).min(process.memory);
+            let usage = rng.gen_range::<f32, _>(2.5..=12.5).min(process.memory);
             process.memory -= usage;
             // TODO: increase garbage memory counter
             debug!(
@@ -112,7 +112,7 @@ fn process_memory_usage(time: Res<Time<Fixed>>, mut process_query: Query<&mut Pr
             );
 
             // Update timer with a random duration
-            let new_duration = Duration::from_secs_f32(rng.gen_range(10.0..=20.0));
+            let new_duration = Duration::from_secs_f32(rng.gen_range(5.0..=10.0));
             process.memory_usage_timer.set_duration(new_duration);
         }
     }

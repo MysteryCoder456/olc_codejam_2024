@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{track::Track, BusStop};
+use crate::{process::Process, track::Track, BusStop};
 use bevy::{
     color::palettes::{css::INDIAN_RED, tailwind::CYAN_600},
     prelude::*,
@@ -56,6 +56,7 @@ struct Bus {
     commute_timer: Timer,
     stop_wait_timer: Timer,
     commute_state: CommuteState,
+    station_type: StationType,
 }
 
 #[derive(Component)]
@@ -88,9 +89,10 @@ fn spawn_bus(
                 },
                 Fill::color(station_fill.color.with_luminance(0.8)),
                 Bus {
-                    commute_timer: Timer::new(Duration::from_secs(5), TimerMode::Repeating),
-                    stop_wait_timer: Timer::new(Duration::from_secs(8), TimerMode::Repeating),
+                    commute_timer: Timer::new(Duration::from_secs_f32(3.5), TimerMode::Repeating),
+                    stop_wait_timer: Timer::new(Duration::from_secs_f32(5.0), TimerMode::Repeating),
                     commute_state: CommuteState::Waiting(station_entity),
+                    station_type: station.station_type,
                 },
             ));
             break;
@@ -131,7 +133,7 @@ fn bus_commutes(
     time: Res<Time<Fixed>>,
     mut bus_query: Query<(&mut Bus, &mut Transform)>,
     track_query: Query<(Entity, &Track)>,
-    stop_query: Query<&Transform, (With<BusStop>, Without<Bus>)>,
+    mut stop_query: Query<(&Transform, Option<&mut Process>), (With<BusStop>, Without<Bus>)>,
 ) {
     for (mut bus, mut bus_tf) in bus_query.iter_mut() {
         match bus.commute_state {
@@ -164,12 +166,12 @@ fn bus_commutes(
             CommuteState::Waiting(stop_entity) => {
                 bus.stop_wait_timer.tick(time.delta());
 
-                if bus.stop_wait_timer.just_finished() {
-                    let Ok(stop_tf) = stop_query.get(stop_entity) else {
-                        warn!("Bus was waiting at a non-existent stop. This should not happen.");
-                        continue;
-                    };
+                let Ok((stop_tf, process)) = stop_query.get_mut(stop_entity) else {
+                    warn!("Bus was waiting at a non-existent stop. This should not happen.");
+                    continue;
+                };
 
+                if bus.stop_wait_timer.just_finished() {
                     // Find a track to commute on
                     let track_entity = track_query
                         .iter()
@@ -191,7 +193,19 @@ fn bus_commutes(
                     continue;
                 }
 
-                // TODO: wait at station and do whatever
+                // If waiting at a process station, do the necessary actions
+                if let Some(mut process) = process {
+                    match bus.station_type {
+                        StationType::Memory => {
+                            // Give memory to the process
+                            let memory_given = 5.0;
+                            process.memory += memory_given * time.delta_secs();
+                        }
+                        StationType::GarbageCollector => {
+                            // TODO: collect garbage
+                        }
+                    }
+                }
             }
         }
     }
