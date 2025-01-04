@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::BusStop;
 use bevy::{
-    color::palettes::css::{DARK_GREEN, GREEN},
+    color::palettes::css::{DARK_GREEN, GREEN, RED},
     prelude::*,
 };
 use bevy_prototype_lyon::{
@@ -19,7 +19,9 @@ pub struct SpawnProcessEvent {
 #[derive(Component)]
 pub struct Process {
     pub memory: f32,
+    memory_state: MemoryState,
     memory_usage_timer: Timer,
+    memory_idle_timer: Timer,
     out_of_memory_timer: Timer,
 }
 
@@ -37,6 +39,11 @@ impl Plugin for ProcessPlugin {
             )
             .add_systems(FixedUpdate, (process_memory_usage, process_out_of_memory));
     }
+}
+
+enum MemoryState {
+    Idle,
+    InUse { usage_per_second: f32 },
 }
 
 fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessEvent>) {
@@ -60,8 +67,10 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
                 Stroke::new(DARK_GREEN, 4.0),
                 Process {
                     memory: 50.0,
-                    memory_usage_timer: Timer::from_seconds(
-                        rng.gen_range(7.5..=12.5),
+                    memory_state: MemoryState::Idle,
+                    memory_usage_timer: Timer::from_seconds(2.0, TimerMode::Repeating),
+                    memory_idle_timer: Timer::from_seconds(
+                        rng.gen_range(8.5..=11.5),
                         TimerMode::Repeating,
                     ),
                     out_of_memory_timer: Timer::from_seconds(60.0, TimerMode::Once),
@@ -70,8 +79,9 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
             ))
             .with_child((
                 Text2d::new("0"),
+                TextColor(Color::WHITE),
                 Transform {
-                    translation: Vec3::new(0.0, 0.0, 1.0),
+                    translation: Vec3::new(0.0, 0.0, 15.0),
                     ..Default::default()
                 },
             ));
@@ -80,13 +90,21 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
 
 fn process_memory_indicator(
     process_query: Query<(&Process, &Children), Changed<Process>>,
-    mut text_query: Query<&mut Text2d>,
+    mut text_query: Query<(&mut Text2d, &mut TextColor)>,
 ) {
     for (process, children) in process_query.iter() {
-        if let Some(mut memory_indicator_text) =
+        if let Some((mut memory_indicator_text, mut memory_indicator_color)) =
             children.first().and_then(|e| text_query.get_mut(*e).ok())
         {
-            memory_indicator_text.0 = process.memory.ceil().to_string();
+            memory_indicator_text.0 = if process.memory > 0.0 {
+                process.memory.ceil().to_string()
+            } else {
+                "0".to_owned()
+            };
+            memory_indicator_color.0 = match process.memory_state {
+                MemoryState::Idle => Color::WHITE,
+                MemoryState::InUse { .. } => Color::Srgba(RED),
+            };
         } else {
             warn!(
                 "Process does not seem to have a memory indicator child entity with a Text2d component!"
@@ -99,21 +117,33 @@ fn process_memory_usage(time: Res<Time<Fixed>>, mut process_query: Query<&mut Pr
     let mut rng = rand::thread_rng();
 
     for mut process in process_query.iter_mut() {
-        process.memory_usage_timer.tick(time.delta());
+        match process.memory_state {
+            MemoryState::Idle => {
+                process.memory_idle_timer.tick(time.delta());
 
-        if process.memory_usage_timer.just_finished() && process.memory > 0.0 {
-            // "Use" memory
-            let usage = rng.gen_range::<f32, _>(2.5..=12.5).min(process.memory);
-            process.memory -= usage;
-            // TODO: increase garbage memory counter
-            debug!(
-                "Process used {} memory, {} remaining",
-                usage, process.memory
-            );
+                if process.memory_idle_timer.just_finished() && process.memory > 0.0 {
+                    // Memory is now "in use"
+                    let total_usage = rng.gen_range::<f32, _>(10.0..=15.0).min(process.memory);
+                    let usage_per_second =
+                        total_usage / process.memory_usage_timer.duration().as_secs_f32();
+                    process.memory_state = MemoryState::InUse { usage_per_second };
+                }
+            }
+            MemoryState::InUse {
+                usage_per_second: usage,
+            } => {
+                process.memory_usage_timer.tick(time.delta());
 
-            // Update timer with a random duration
-            let new_duration = Duration::from_secs_f32(rng.gen_range(5.0..=10.0));
-            process.memory_usage_timer.set_duration(new_duration);
+                process.memory -= usage * time.delta().as_secs_f32(); // "Consume" memory
+                                                                      // TODO: increase garbage memory counter
+
+                if process.memory_usage_timer.just_finished() {
+                    // Stay idle for a random duration
+                    let new_duration = Duration::from_secs_f32(rng.gen_range(5.0..=10.0));
+                    process.memory_idle_timer.set_duration(new_duration);
+                    process.memory_state = MemoryState::Idle;
+                }
+            }
         }
     }
 }
