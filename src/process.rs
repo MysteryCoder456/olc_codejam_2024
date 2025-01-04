@@ -17,13 +17,7 @@ pub struct SpawnProcessEvent {
 }
 
 #[derive(Component)]
-pub struct Process {
-    pub memory: f32,
-    memory_state: MemoryState,
-    memory_usage_timer: Timer,
-    memory_idle_timer: Timer,
-    out_of_memory_timer: Timer,
-}
+pub struct ProcessMemory(pub f32);
 
 pub struct ProcessPlugin;
 
@@ -46,6 +40,14 @@ enum MemoryState {
     InUse { usage_per_second: f32 },
 }
 
+#[derive(Component)]
+struct Process {
+    memory_state: MemoryState,
+    memory_usage_timer: Timer,
+    memory_idle_timer: Timer,
+    out_of_memory_timer: Timer,
+}
+
 fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessEvent>) {
     let mut rng = rand::thread_rng();
     let shape = RegularPolygon {
@@ -66,7 +68,6 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
                 Fill::color(GREEN),
                 Stroke::new(DARK_GREEN, 4.0),
                 Process {
-                    memory: 50.0,
                     memory_state: MemoryState::Idle,
                     memory_usage_timer: Timer::from_seconds(2.0, TimerMode::Repeating),
                     memory_idle_timer: Timer::from_seconds(
@@ -75,13 +76,14 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
                     ),
                     out_of_memory_timer: Timer::from_seconds(60.0, TimerMode::Once),
                 },
+                ProcessMemory(50.0),
                 BusStop,
             ))
             .with_child((
                 Text2d::new("0"),
                 TextColor(Color::WHITE),
                 Transform {
-                    translation: Vec3::new(0.0, 0.0, 15.0),
+                    translation: Vec3::new(0.0, 0.0, 5.0),
                     ..Default::default()
                 },
             ));
@@ -89,15 +91,15 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
 }
 
 fn process_memory_indicator(
-    process_query: Query<(&Process, &Children), Changed<Process>>,
+    process_query: Query<(&Process, &ProcessMemory, &Children), Changed<ProcessMemory>>,
     mut text_query: Query<(&mut Text2d, &mut TextColor)>,
 ) {
-    for (process, children) in process_query.iter() {
+    for (process, process_memory, children) in process_query.iter() {
         if let Some((mut memory_indicator_text, mut memory_indicator_color)) =
             children.first().and_then(|e| text_query.get_mut(*e).ok())
         {
-            memory_indicator_text.0 = if process.memory > 0.0 {
-                process.memory.ceil().to_string()
+            memory_indicator_text.0 = if process_memory.0 > 0.0 {
+                process_memory.0.ceil().to_string()
             } else {
                 "0".to_owned()
             };
@@ -113,17 +115,20 @@ fn process_memory_indicator(
     }
 }
 
-fn process_memory_usage(time: Res<Time<Fixed>>, mut process_query: Query<&mut Process>) {
+fn process_memory_usage(
+    time: Res<Time<Fixed>>,
+    mut process_query: Query<(&mut Process, &mut ProcessMemory)>,
+) {
     let mut rng = rand::thread_rng();
 
-    for mut process in process_query.iter_mut() {
+    for (mut process, mut process_memory) in process_query.iter_mut() {
         match process.memory_state {
             MemoryState::Idle => {
                 process.memory_idle_timer.tick(time.delta());
 
-                if process.memory_idle_timer.just_finished() && process.memory > 0.0 {
+                if process.memory_idle_timer.just_finished() && process_memory.0 > 0.0 {
                     // Memory is now "in use"
-                    let total_usage = rng.gen_range::<f32, _>(10.0..=15.0).min(process.memory);
+                    let total_usage = rng.gen_range::<f32, _>(10.0..=15.0).min(process_memory.0);
                     let usage_per_second =
                         total_usage / process.memory_usage_timer.duration().as_secs_f32();
                     process.memory_state = MemoryState::InUse { usage_per_second };
@@ -134,8 +139,8 @@ fn process_memory_usage(time: Res<Time<Fixed>>, mut process_query: Query<&mut Pr
             } => {
                 process.memory_usage_timer.tick(time.delta());
 
-                process.memory -= usage * time.delta().as_secs_f32(); // "Consume" memory
-                                                                      // TODO: increase garbage memory counter
+                process_memory.0 -= usage * time.delta().as_secs_f32(); // "Consume" memory
+                                                                        // TODO: increase garbage memory counter
 
                 if process.memory_usage_timer.just_finished() {
                     // Stay idle for a random duration
@@ -151,10 +156,10 @@ fn process_memory_usage(time: Res<Time<Fixed>>, mut process_query: Query<&mut Pr
 fn process_out_of_memory(
     time: Res<Time<Fixed>>,
     mut gizmos: Gizmos,
-    mut process_query: Query<(&mut Process, &Transform)>,
+    mut process_query: Query<(&mut Process, &ProcessMemory, &Transform)>,
 ) {
-    for (mut process, process_tf) in process_query.iter_mut() {
-        if process.memory > 0.0 {
+    for (mut process, process_memory, process_tf) in process_query.iter_mut() {
+        if process_memory.0 > 0.0 {
             process.out_of_memory_timer.reset();
             continue;
         }

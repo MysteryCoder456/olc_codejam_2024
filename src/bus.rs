@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{process::Process, track::Track, BusStop};
+use crate::{process::ProcessMemory, track::Track, BusStop};
 use bevy::{
     color::palettes::{css::INDIAN_RED, tailwind::CYAN_600},
     prelude::*,
@@ -133,7 +133,7 @@ fn bus_commutes(
     time: Res<Time<Fixed>>,
     mut bus_query: Query<(&mut Bus, &mut Transform)>,
     track_query: Query<(Entity, &Track)>,
-    mut stop_query: Query<(&Transform, Option<&mut Process>), (With<BusStop>, Without<Bus>)>,
+    mut stop_query: Query<(&Transform, Option<&mut ProcessMemory>), (With<BusStop>, Without<Bus>)>,
 ) {
     for (mut bus, mut bus_tf) in bus_query.iter_mut() {
         match bus.commute_state {
@@ -166,7 +166,7 @@ fn bus_commutes(
             CommuteState::Waiting(stop_entity) => {
                 bus.stop_wait_timer.tick(time.delta());
 
-                let Ok((stop_tf, process)) = stop_query.get_mut(stop_entity) else {
+                let Ok((stop_tf, process_memory)) = stop_query.get_mut(stop_entity) else {
                     warn!("Bus was waiting at a non-existent stop. This should not happen.");
                     continue;
                 };
@@ -194,12 +194,12 @@ fn bus_commutes(
                 }
 
                 // If waiting at a process station, do the necessary actions
-                if let Some(mut process) = process {
+                if let Some(mut process_memory) = process_memory {
                     match bus.station_type {
                         StationType::Memory => {
                             // Give memory to the process
-                            let memory_given = 5.0;
-                            process.memory += memory_given * time.delta_secs();
+                            let memory_given = 8.0;
+                            process_memory.0 += memory_given * time.delta_secs();
                         }
                         StationType::GarbageCollector => {
                             // TODO: collect garbage
