@@ -199,7 +199,7 @@ fn bus_commutes(
                         StationType::Memory => {
                             // Give memory to the process
                             let memory_given = 8.0;
-                            process_memory.0 += memory_given * time.delta_secs();
+                            process_memory.memory += memory_given * time.delta_secs();
                         }
                         StationType::GarbageCollector => {
                             // TODO: collect garbage

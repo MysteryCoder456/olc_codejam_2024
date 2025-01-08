@@ -15,6 +15,12 @@ pub struct CursorPosition(Vec2);
 #[derive(Component)]
 pub struct BusStop;
 
+#[derive(Component)]
+pub struct Velocity {
+    pub velocity: Vec2,
+    pub friction: Option<f32>,
+}
+
 fn main() {
     let mut app = App::new();
 
@@ -44,7 +50,8 @@ fn main() {
     .insert_resource(CursorPosition(Vec2::ZERO))
     .add_systems(Startup, setup_app)
     .add_systems(PostStartup, spawn_test_entities)
-    .add_systems(PreUpdate, update_cursor_position);
+    .add_systems(PreUpdate, update_cursor_position)
+    .add_systems(FixedUpdate, velocity_system);
 
     app.run();
 }
@@ -67,6 +74,23 @@ fn update_cursor_position(
         .and_then(|pos| camera.viewport_to_world_2d(camera_transform, pos).ok())
     {
         cursor_position.0 = pos;
+    }
+}
+
+fn velocity_system(
+    time: Res<Time<Fixed>>,
+    mut velocity_query: Query<(&mut Velocity, &mut Transform)>,
+) {
+    let dt = time.delta_secs();
+
+    for (mut velocity, mut transform) in velocity_query.iter_mut() {
+        // Update position
+        transform.translation += velocity.velocity.extend(0.0) * dt;
+
+        // Apply friction
+        if let Some(friction) = velocity.friction {
+            velocity.velocity *= (1.0 - friction * dt).clamp(0.0, 1.0);
+        }
     }
 }
 
