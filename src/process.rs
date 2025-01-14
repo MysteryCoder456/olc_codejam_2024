@@ -16,10 +16,14 @@ pub struct SpawnProcessEvent {
     pub position: Vec2,
 }
 
+#[derive(Event)]
+pub struct DespawnGarbageIndicatorEvent {
+    pub process_entity: Entity,
+}
+
 #[derive(Component)]
 pub struct ProcessMemory {
     pub memory: f32,
-    pub garbage_memory: f32,
 }
 
 pub struct ProcessPlugin;
@@ -28,11 +32,13 @@ impl Plugin for ProcessPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<SpawnProcessEvent>()
             .add_event::<SpawnGarbageIndicatorEvent>()
+            .add_event::<DespawnGarbageIndicatorEvent>()
             .add_systems(
                 Update,
                 (
                     spawn_processes.run_if(on_event::<SpawnProcessEvent>),
                     spawn_garbage_indicators.run_if(on_event::<SpawnGarbageIndicatorEvent>),
+                    despawn_garbage_indicators.run_if(on_event::<DespawnGarbageIndicatorEvent>),
                     process_memory_indicator,
                 ),
             )
@@ -43,7 +49,6 @@ impl Plugin for ProcessPlugin {
 #[derive(Event)]
 struct SpawnGarbageIndicatorEvent {
     process_entity: Entity,
-    garbage_memory: f32,
 }
 
 enum MemoryState {
@@ -61,9 +66,7 @@ struct Process {
 }
 
 #[derive(Component)]
-struct GarbageIndicator {
-    garbage_memory: f32,
-}
+struct GarbageIndicator;
 
 fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessEvent>) {
     let mut rng = rand::thread_rng();
@@ -91,13 +94,10 @@ fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessE
                         rng.gen_range(8.5..=11.5),
                         TimerMode::Repeating,
                     ),
-                    garbage_spawn_timer: Timer::from_seconds(2.5, TimerMode::Repeating),
+                    garbage_spawn_timer: Timer::from_seconds(1.8, TimerMode::Repeating),
                     out_of_memory_timer: Timer::from_seconds(30.0, TimerMode::Once),
                 },
-                ProcessMemory {
-                    memory: 50.0,
-                    garbage_memory: 0.0,
-                },
+                ProcessMemory { memory: 50.0 },
                 BusStop,
             ))
             .with_child((
@@ -140,19 +140,33 @@ fn spawn_garbage_indicators(
             },
             Fill::color(INDIAN_RED),
             Stroke::new(INDIAN_RED.darker(0.1), 1.5),
-            GarbageIndicator {
-                garbage_memory: event.garbage_memory,
-            },
+            GarbageIndicator,
             Velocity {
                 velocity,
                 friction: Some(friction),
             },
         ));
+    }
+}
 
-        debug!(
-            "Spawned garbage indicator with {} memory",
-            event.garbage_memory
-        );
+fn despawn_garbage_indicators(
+    mut commands: Commands,
+    mut events: EventReader<DespawnGarbageIndicatorEvent>,
+    process_query: Query<&Children, With<Process>>,
+    garbage_query: Query<Entity, With<GarbageIndicator>>,
+) {
+    for event in events.read() {
+        let Ok(process_children) = process_query.get(event.process_entity) else {
+            continue;
+        };
+
+        // Despawn the first child with the GarbageIndicator component
+        for child in process_children.iter() {
+            if garbage_query.contains(*child) {
+                commands.entity(*child).despawn_recursive();
+                break;
+            }
+        }
     }
 }
 
@@ -207,29 +221,16 @@ fn process_memory_usage(
                 process.memory_usage_timer.tick(time.delta());
                 process.garbage_spawn_timer.tick(time.delta());
 
+                // "Consume" memory
                 let usage = usage_per_second * time.delta_secs();
-                process_memory.memory -= usage; // "Consume" memory
-                process_memory.garbage_memory += usage; // "Produce" garbage memory
+                process_memory.memory -= usage;
 
+                // "Produce" garbage memory
                 if process.garbage_spawn_timer.just_finished() {
-                    let elapsed_time = process.garbage_spawn_timer.duration();
-                    let garbage_chunk = usage_per_second * elapsed_time.as_secs_f32();
-                    garbage_indicator_events.send(SpawnGarbageIndicatorEvent {
-                        process_entity,
-                        garbage_memory: garbage_chunk,
-                    });
+                    garbage_indicator_events.send(SpawnGarbageIndicatorEvent { process_entity });
                 }
 
                 if process.memory_usage_timer.just_finished() {
-                    if !process.garbage_spawn_timer.just_finished() {
-                        // Spawn garbage containing memory used between last spawn and now
-                        garbage_indicator_events.send(SpawnGarbageIndicatorEvent {
-                            process_entity,
-                            garbage_memory: usage_per_second
-                                * process.garbage_spawn_timer.elapsed_secs(),
-                        });
-                    }
-
                     // Stay idle for a random duration
                     let new_duration = Duration::from_secs_f32(rng.gen_range(5.0..=10.0));
                     process.memory_idle_timer.set_duration(new_duration);

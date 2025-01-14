@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use crate::{process::ProcessMemory, track::Track, BusStop};
+use crate::{
+    process::{DespawnGarbageIndicatorEvent, ProcessMemory},
+    track::Track,
+    BusStop,
+};
 use bevy::{
     color::palettes::{css::INDIAN_RED, tailwind::CYAN_600},
     prelude::*,
@@ -56,7 +60,12 @@ struct Bus {
     commute_timer: Timer,
     stop_wait_timer: Timer,
     commute_state: CommuteState,
-    station_type: StationType,
+}
+
+#[derive(Component)]
+enum BusType {
+    Memory,
+    GarbageCollector(Timer),
 }
 
 #[derive(Component)]
@@ -81,6 +90,13 @@ fn spawn_bus(
                 continue;
             }
 
+            let bus_type = match event.station_type {
+                StationType::Memory => BusType::Memory,
+                StationType::GarbageCollector => {
+                    BusType::GarbageCollector(Timer::from_seconds(1.2, TimerMode::Repeating))
+                }
+            };
+
             commands.spawn((
                 ShapeBundle {
                     path: GeometryBuilder::build_as(&shape),
@@ -89,11 +105,11 @@ fn spawn_bus(
                 },
                 Fill::color(station_fill.color.with_luminance(0.8)),
                 Bus {
-                    commute_timer: Timer::new(Duration::from_secs_f32(3.5), TimerMode::Repeating),
-                    stop_wait_timer: Timer::new(Duration::from_secs_f32(5.0), TimerMode::Repeating),
+                    commute_timer: Timer::new(Duration::from_secs_f32(4.0), TimerMode::Repeating),
+                    stop_wait_timer: Timer::new(Duration::from_secs_f32(4.0), TimerMode::Repeating),
                     commute_state: CommuteState::Waiting(station_entity),
-                    station_type: station.station_type,
                 },
+                bus_type,
             ));
             break;
         }
@@ -131,11 +147,12 @@ fn spawn_bus_station(mut commands: Commands, mut events: EventReader<SpawnBusSta
 
 fn bus_commutes(
     time: Res<Time<Fixed>>,
-    mut bus_query: Query<(&mut Bus, &mut Transform)>,
+    mut garbage_despawn_events: EventWriter<DespawnGarbageIndicatorEvent>,
     track_query: Query<(Entity, &Track)>,
+    mut bus_query: Query<(&mut Bus, &mut BusType, &mut Transform)>,
     mut stop_query: Query<(&Transform, Option<&mut ProcessMemory>), (With<BusStop>, Without<Bus>)>,
 ) {
-    for (mut bus, mut bus_tf) in bus_query.iter_mut() {
+    for (mut bus, mut bus_type, mut bus_tf) in bus_query.iter_mut() {
         match bus.commute_state {
             CommuteState::Commuting(track_entity) => {
                 let Ok((_, track)) = track_query.get(track_entity) else {
@@ -171,6 +188,26 @@ fn bus_commutes(
                     continue;
                 };
 
+                // If waiting at a process station, do the necessary actions
+                if let Some(mut process_memory) = process_memory {
+                    match *bus_type {
+                        BusType::Memory => {
+                            // Give memory to the process
+                            let memory_given = 10.0;
+                            process_memory.memory += memory_given * time.delta_secs();
+                        }
+                        BusType::GarbageCollector(ref mut timer) => {
+                            // Collect garbage one at a time
+                            timer.tick(time.delta());
+                            if timer.just_finished() {
+                                garbage_despawn_events.send(DespawnGarbageIndicatorEvent {
+                                    process_entity: stop_entity,
+                                });
+                            }
+                        }
+                    }
+                }
+
                 if bus.stop_wait_timer.just_finished() {
                     // Find a track to commute on
                     let track_entity = track_query
@@ -189,21 +226,6 @@ fn bus_commutes(
                         bus.commute_state = CommuteState::Commuting(track_entity);
                     } else {
                         // TODO: Reached end of track. Reverse commute.
-                    }
-                    continue;
-                }
-
-                // If waiting at a process station, do the necessary actions
-                if let Some(mut process_memory) = process_memory {
-                    match bus.station_type {
-                        StationType::Memory => {
-                            // Give memory to the process
-                            let memory_given = 8.0;
-                            process_memory.memory += memory_given * time.delta_secs();
-                        }
-                        StationType::GarbageCollector => {
-                            // TODO: collect garbage
-                        }
                     }
                 }
             }
