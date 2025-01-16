@@ -1,8 +1,9 @@
 use std::time::Duration;
 
-use crate::{BusStop, Velocity};
+use crate::{BusStop, Collider, Velocity};
 use bevy::{
     color::palettes::css::{DARK_GREEN, GREEN, INDIAN_RED, RED},
+    math::bounding::Aabb2d,
     prelude::*,
 };
 use bevy_prototype_lyon::{
@@ -17,7 +18,7 @@ pub struct SpawnProcessEvent {
 }
 
 #[derive(Event)]
-pub struct DespawnGarbageIndicatorEvent {
+pub struct DespawnGarbageIndicatorAtProcessEvent {
     pub process_entity: Entity,
 }
 
@@ -26,19 +27,23 @@ pub struct ProcessMemory {
     pub memory: f32,
 }
 
+#[derive(Component)]
+pub struct GarbageIndicator;
+
 pub struct ProcessPlugin;
 
 impl Plugin for ProcessPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<SpawnProcessEvent>()
             .add_event::<SpawnGarbageIndicatorEvent>()
-            .add_event::<DespawnGarbageIndicatorEvent>()
+            .add_event::<DespawnGarbageIndicatorAtProcessEvent>()
             .add_systems(
                 Update,
                 (
                     spawn_processes.run_if(on_event::<SpawnProcessEvent>),
                     spawn_garbage_indicators.run_if(on_event::<SpawnGarbageIndicatorEvent>),
-                    despawn_garbage_indicators.run_if(on_event::<DespawnGarbageIndicatorEvent>),
+                    despawn_garbage_indicators
+                        .run_if(on_event::<DespawnGarbageIndicatorAtProcessEvent>),
                     process_memory_indicator,
                 ),
             )
@@ -64,9 +69,6 @@ struct Process {
     garbage_spawn_timer: Timer,
     out_of_memory_timer: Timer,
 }
-
-#[derive(Component)]
-struct GarbageIndicator;
 
 fn spawn_processes(mut commands: Commands, mut events: EventReader<SpawnProcessEvent>) {
     let mut rng = rand::thread_rng();
@@ -145,13 +147,14 @@ fn spawn_garbage_indicators(
                 velocity,
                 friction: Some(friction),
             },
+            Collider(Aabb2d::new(Vec2::ZERO, shape.extents / 2.0)),
         ));
     }
 }
 
 fn despawn_garbage_indicators(
     mut commands: Commands,
-    mut events: EventReader<DespawnGarbageIndicatorEvent>,
+    mut events: EventReader<DespawnGarbageIndicatorAtProcessEvent>,
     process_query: Query<&Children, With<Process>>,
     garbage_query: Query<Entity, With<GarbageIndicator>>,
 ) {

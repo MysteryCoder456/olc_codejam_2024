@@ -1,12 +1,13 @@
 use std::time::Duration;
 
 use crate::{
-    process::{DespawnGarbageIndicatorEvent, ProcessMemory},
+    process::{DespawnGarbageIndicatorAtProcessEvent, GarbageIndicator, ProcessMemory},
     track::Track,
-    BusStop,
+    BusStop, Collider,
 };
 use bevy::{
     color::palettes::{css::INDIAN_RED, tailwind::CYAN_600},
+    math::bounding::{Aabb2d, BoundingVolume, IntersectsVolume},
     prelude::*,
 };
 use bevy_prototype_lyon::{
@@ -46,7 +47,7 @@ impl Plugin for BusPlugin {
                         .after(spawn_bus_station),
                 ),
             )
-            .add_systems(FixedUpdate, bus_commutes);
+            .add_systems(FixedUpdate, (bus_commutes, bus_garbage_collisions));
     }
 }
 
@@ -110,6 +111,7 @@ fn spawn_bus(
                     commute_state: CommuteState::Waiting(station_entity),
                 },
                 bus_type,
+                Collider(Aabb2d::new(Vec2::ZERO, shape.extents / 2.0)),
             ));
             break;
         }
@@ -147,7 +149,7 @@ fn spawn_bus_station(mut commands: Commands, mut events: EventReader<SpawnBusSta
 
 fn bus_commutes(
     time: Res<Time<Fixed>>,
-    mut garbage_despawn_events: EventWriter<DespawnGarbageIndicatorEvent>,
+    mut garbage_despawn_events: EventWriter<DespawnGarbageIndicatorAtProcessEvent>,
     track_query: Query<(Entity, &Track)>,
     mut bus_query: Query<(&mut Bus, &mut BusType, &mut Transform)>,
     mut stop_query: Query<(&Transform, Option<&mut ProcessMemory>), (With<BusStop>, Without<Bus>)>,
@@ -200,9 +202,11 @@ fn bus_commutes(
                             // Collect garbage one at a time
                             timer.tick(time.delta());
                             if timer.just_finished() {
-                                garbage_despawn_events.send(DespawnGarbageIndicatorEvent {
-                                    process_entity: stop_entity,
-                                });
+                                garbage_despawn_events.send(
+                                    DespawnGarbageIndicatorAtProcessEvent {
+                                        process_entity: stop_entity,
+                                    },
+                                );
                             }
                         }
                     }
@@ -226,6 +230,55 @@ fn bus_commutes(
                         bus.commute_state = CommuteState::Commuting(track_entity);
                     } else {
                         // TODO: Reached end of track. Reverse commute.
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn bus_garbage_collisions(
+    mut commands: Commands,
+    garbage_query: Query<(Entity, &Collider<Aabb2d>, &GlobalTransform), With<GarbageIndicator>>,
+    bus_query: Query<
+        (&BusType, &Collider<Aabb2d>, &GlobalTransform),
+        (With<Bus>, Without<GarbageIndicator>, Changed<Transform>),
+    >,
+) {
+    for (bus_type, bus_collider, bus_tf) in bus_query.iter() {
+        // FIXME: panics when bus rotates
+        //let bus_volume = bus_collider.0.transformed_by(
+        //    bus_tf.translation().truncate(),
+        //    bus_tf.rotation().to_axis_angle().1,
+        //);
+
+        // HACK: Manually transform the volume (workaround for the FIXME above)
+        let rotation = bus_tf.rotation().to_axis_angle().1;
+        let rot_mat = Mat2::from_cols(
+            Vec2::new(rotation.cos(), rotation.sin()),
+            Vec2::new(-rotation.sin(), rotation.cos()),
+        );
+        let half_size = rot_mat * bus_collider.0.half_size();
+        let bus_volume = Aabb2d::new(bus_tf.translation().truncate(), half_size.abs());
+
+        for (garbage_entity, garbage_collider, garbage_tf) in garbage_query.iter() {
+            let garbage_volume = garbage_collider
+                .0
+                .translated_by(garbage_tf.translation().truncate());
+
+            if garbage_volume.intersects(&bus_volume) {
+                debug!(
+                    "Bus collided with garbage at {:?}",
+                    garbage_tf.translation().truncate()
+                );
+                commands.entity(garbage_entity).despawn_recursive();
+
+                match *bus_type {
+                    BusType::Memory => {
+                        // TODO: Bus has crashed
+                    }
+                    BusType::GarbageCollector(_) => {
+                        // Collect the garbage (already achieve by despawn)
                     }
                 }
             }

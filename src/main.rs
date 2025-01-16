@@ -1,5 +1,6 @@
 use bevy::{
     log::{Level, LogPlugin},
+    math::bounding::BoundingVolume,
     prelude::*,
     window::WindowResolution,
 };
@@ -20,6 +21,9 @@ pub struct Velocity {
     pub velocity: Vec2,
     pub friction: Option<f32>,
 }
+
+#[derive(Component)]
+pub struct Collider<A: BoundingVolume>(pub A);
 
 fn main() {
     let mut app = App::new();
