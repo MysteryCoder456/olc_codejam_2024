@@ -51,9 +51,14 @@ impl Plugin for BusPlugin {
     }
 }
 
+#[derive(Clone)]
 enum CommuteState {
     Commuting(Entity),
     Waiting(Entity),
+    Crashed {
+        crash_timer: Timer,
+        previous_state: Box<CommuteState>,
+    },
 }
 
 #[derive(Component)]
@@ -66,7 +71,7 @@ struct Bus {
 #[derive(Component)]
 enum BusType {
     Memory,
-    GarbageCollector(Timer),
+    GarbageCollector { collection_timer: Timer },
 }
 
 #[derive(Component)]
@@ -93,9 +98,9 @@ fn spawn_bus(
 
             let bus_type = match event.station_type {
                 StationType::Memory => BusType::Memory,
-                StationType::GarbageCollector => {
-                    BusType::GarbageCollector(Timer::from_seconds(1.2, TimerMode::Repeating))
-                }
+                StationType::GarbageCollector => BusType::GarbageCollector {
+                    collection_timer: Timer::from_seconds(1.2, TimerMode::Repeating),
+                },
             };
 
             commands.spawn((
@@ -198,10 +203,12 @@ fn bus_commutes(
                             let memory_given = 10.0;
                             process_memory.memory += memory_given * time.delta_secs();
                         }
-                        BusType::GarbageCollector(ref mut timer) => {
+                        BusType::GarbageCollector {
+                            ref mut collection_timer,
+                        } => {
                             // Collect garbage one at a time
-                            timer.tick(time.delta());
-                            if timer.just_finished() {
+                            collection_timer.tick(time.delta());
+                            if collection_timer.just_finished() {
                                 garbage_despawn_events.send(
                                     DespawnGarbageIndicatorAtProcessEvent {
                                         process_entity: stop_entity,
@@ -233,6 +240,16 @@ fn bus_commutes(
                     }
                 }
             }
+            CommuteState::Crashed {
+                ref mut crash_timer,
+                ref previous_state,
+            } => {
+                crash_timer.tick(time.delta());
+
+                if crash_timer.just_finished() {
+                    bus.commute_state = *previous_state.clone();
+                }
+            }
         }
     }
 }
@@ -240,12 +257,12 @@ fn bus_commutes(
 fn bus_garbage_collisions(
     mut commands: Commands,
     garbage_query: Query<(Entity, &Collider<Aabb2d>, &GlobalTransform), With<GarbageIndicator>>,
-    bus_query: Query<
-        (&BusType, &Collider<Aabb2d>, &GlobalTransform),
+    mut bus_query: Query<
+        (&mut Bus, &BusType, &Collider<Aabb2d>, &GlobalTransform),
         (With<Bus>, Without<GarbageIndicator>, Changed<Transform>),
     >,
 ) {
-    for (bus_type, bus_collider, bus_tf) in bus_query.iter() {
+    for (mut bus, bus_type, bus_collider, bus_tf) in bus_query.iter_mut() {
         // FIXME: panics when bus rotates
         //let bus_volume = bus_collider.0.transformed_by(
         //    bus_tf.translation().truncate(),
@@ -275,9 +292,15 @@ fn bus_garbage_collisions(
 
                 match *bus_type {
                     BusType::Memory => {
-                        // TODO: Bus has crashed
+                        // Bus has crashed
+                        bus.commute_state = CommuteState::Crashed {
+                            crash_timer: Timer::from_seconds(2.5, TimerMode::Once),
+                            previous_state: Box::new(bus.commute_state.clone()),
+                        };
                     }
-                    BusType::GarbageCollector(_) => {
+                    BusType::GarbageCollector {
+                        collection_timer: _,
+                    } => {
                         // Collect the garbage (already achieve by despawn)
                     }
                 }
