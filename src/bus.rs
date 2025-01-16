@@ -53,8 +53,14 @@ impl Plugin for BusPlugin {
 
 #[derive(Clone)]
 enum CommuteState {
-    Commuting(Entity),
-    Waiting(Entity),
+    Commuting {
+        commute_timer: Timer,
+        track_entity: Entity,
+    },
+    Waiting {
+        stop_wait_timer: Timer,
+        stop_entity: Entity,
+    },
     Crashed {
         crash_timer: Timer,
         previous_state: Box<CommuteState>,
@@ -63,8 +69,6 @@ enum CommuteState {
 
 #[derive(Component)]
 struct Bus {
-    commute_timer: Timer,
-    stop_wait_timer: Timer,
     commute_state: CommuteState,
 }
 
@@ -111,9 +115,14 @@ fn spawn_bus(
                 },
                 Fill::color(station_fill.color.with_luminance(0.8)),
                 Bus {
-                    commute_timer: Timer::new(Duration::from_secs_f32(4.0), TimerMode::Repeating),
-                    stop_wait_timer: Timer::new(Duration::from_secs_f32(4.0), TimerMode::Repeating),
-                    commute_state: CommuteState::Waiting(station_entity),
+                    commute_state: CommuteState::Waiting {
+                        // Stop timer is repeating so that bus waits for the player to set down first track
+                        stop_wait_timer: Timer::new(
+                            Duration::from_secs_f32(4.0),
+                            TimerMode::Repeating,
+                        ),
+                        stop_entity: station_entity,
+                    },
                 },
                 bus_type,
                 Collider(Aabb2d::new(Vec2::ZERO, shape.extents / 2.0)),
@@ -161,23 +170,29 @@ fn bus_commutes(
 ) {
     for (mut bus, mut bus_type, mut bus_tf) in bus_query.iter_mut() {
         match bus.commute_state {
-            CommuteState::Commuting(track_entity) => {
+            CommuteState::Commuting {
+                ref mut commute_timer,
+                track_entity,
+            } => {
                 let Ok((_, track)) = track_query.get(track_entity) else {
                     warn!("Bus is commuting on a non-existent track. This should not happen.");
                     continue;
                 };
 
-                bus.commute_timer.tick(time.delta());
-                if bus.commute_timer.just_finished() {
+                commute_timer.tick(time.delta());
+                if commute_timer.just_finished() {
                     debug!("Bus is now waiting at stop {:?}", track.destination);
-                    bus.commute_state = CommuteState::Waiting(track.destination);
+                    bus.commute_state = CommuteState::Waiting {
+                        stop_wait_timer: Timer::from_seconds(4.0, TimerMode::Once),
+                        stop_entity: track.destination,
+                    };
                     bus_tf.translation = track.path.last().unwrap().extend(bus_tf.translation.z);
                     continue;
                 }
 
                 // Calculate bus's position on the track based on the elapsed time
                 let total_progress =
-                    bus.commute_timer.elapsed_secs() / bus.commute_timer.duration().as_secs_f32();
+                    commute_timer.elapsed_secs() / commute_timer.duration().as_secs_f32();
                 let line_progress = total_progress * (track.path.len() - 1) as f32 % 1.0;
 
                 let path_idx = (total_progress * (track.path.len() - 1) as f32).floor() as usize;
@@ -187,8 +202,11 @@ fn bus_commutes(
                 bus_tf.translation = from.lerp(to, line_progress).extend(bus_tf.translation.z);
                 bus_tf.rotation = Quat::from_rotation_z((to - from).to_angle());
             }
-            CommuteState::Waiting(stop_entity) => {
-                bus.stop_wait_timer.tick(time.delta());
+            CommuteState::Waiting {
+                ref mut stop_wait_timer,
+                stop_entity,
+            } => {
+                stop_wait_timer.tick(time.delta());
 
                 let Ok((stop_tf, process_memory)) = stop_query.get_mut(stop_entity) else {
                     warn!("Bus was waiting at a non-existent stop. This should not happen.");
@@ -219,7 +237,7 @@ fn bus_commutes(
                     }
                 }
 
-                if bus.stop_wait_timer.just_finished() {
+                if stop_wait_timer.just_finished() {
                     // Find a track to commute on
                     let track_entity = track_query
                         .iter()
@@ -234,7 +252,10 @@ fn bus_commutes(
 
                     if let Some(track_entity) = track_entity {
                         debug!("Bus is starting new commute");
-                        bus.commute_state = CommuteState::Commuting(track_entity);
+                        bus.commute_state = CommuteState::Commuting {
+                            commute_timer: Timer::from_seconds(4.0, TimerMode::Once),
+                            track_entity,
+                        };
                     } else {
                         // TODO: Reached end of track. Reverse commute.
                     }
@@ -258,11 +279,11 @@ fn bus_garbage_collisions(
     mut commands: Commands,
     garbage_query: Query<(Entity, &Collider<Aabb2d>, &GlobalTransform), With<GarbageIndicator>>,
     mut bus_query: Query<
-        (&mut Bus, &BusType, &Collider<Aabb2d>, &GlobalTransform),
+        (&mut Bus, &Collider<Aabb2d>, &GlobalTransform),
         (With<Bus>, Without<GarbageIndicator>, Changed<Transform>),
     >,
 ) {
-    for (mut bus, bus_type, bus_collider, bus_tf) in bus_query.iter_mut() {
+    for (mut bus, bus_collider, bus_tf) in bus_query.iter_mut() {
         // FIXME: panics when bus rotates
         //let bus_volume = bus_collider.0.transformed_by(
         //    bus_tf.translation().truncate(),
@@ -288,22 +309,13 @@ fn bus_garbage_collisions(
                     "Bus collided with garbage at {:?}",
                     garbage_tf.translation().truncate()
                 );
-                commands.entity(garbage_entity).despawn_recursive();
 
-                match *bus_type {
-                    BusType::Memory => {
-                        // Bus has crashed
-                        bus.commute_state = CommuteState::Crashed {
-                            crash_timer: Timer::from_seconds(2.5, TimerMode::Once),
-                            previous_state: Box::new(bus.commute_state.clone()),
-                        };
-                    }
-                    BusType::GarbageCollector {
-                        collection_timer: _,
-                    } => {
-                        // Collect the garbage (already achieve by despawn)
-                    }
-                }
+                // Despawn garbage and crash bus
+                commands.entity(garbage_entity).despawn_recursive();
+                bus.commute_state = CommuteState::Crashed {
+                    crash_timer: Timer::from_seconds(2.5, TimerMode::Once),
+                    previous_state: Box::new(bus.commute_state.clone()),
+                };
             }
         }
     }
